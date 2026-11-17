@@ -91,6 +91,13 @@ async fn create_session(
     }
 
     let vonage_token = produce_vonage_token()?;
+    // Check the phone risk before creating a Verify request. This keeps the
+    // OTP from being sent when a recent SIM swap is reported.
+    state
+        .vonage
+        .check_sim_swap(&vonage_token, &user.phone)
+        .await?;
+
     let verify_request_id = state
         .vonage
         .start_verification(&vonage_token, &user.phone)
