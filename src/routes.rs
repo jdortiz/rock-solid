@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{State, rejection::JsonRejection},
+    extract::{Request, State, rejection::JsonRejection},
+    http::HeaderMap,
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
 };
 use reqwest::StatusCode;
@@ -13,7 +16,10 @@ use tracing::{Level, debug, warn};
 use crate::{
     app_error::AppError,
     repository::Repository,
-    token::{get_encoding_key, produce_session_token, produce_vonage_token},
+    token::{
+        get_decoding_key, get_encoding_key, produce_session_token, produce_vonage_token,
+        verify_session_token,
+    },
     user::User,
     vonage::VonageClient,
 };
@@ -24,16 +30,32 @@ struct AppState {
     vonage: VonageClient,
 }
 
+/// Require a valid application session before running a protected handler.
+async fn require_session(
+    headers: HeaderMap,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let decoding_key = get_decoding_key()?;
+    verify_session_token(&decoding_key, &headers)?;
+    Ok(next.run(request).await)
+}
+
 /// Return an HTTP router with the handlers bound to the endpoints.
 pub fn app(repo: Arc<dyn Repository<User>>) -> Router {
     let state = AppState {
         repo,
         vonage: VonageClient::new(),
     };
+    let protected_routes = Router::new()
+        .route("/application", get(application))
+        .route_layer(middleware::from_fn(require_session));
+
     Router::new()
         .route("/health", get(health))
         .route("/session", post(create_session))
         .route("/session/verification", post(validate_code))
+        .merge(protected_routes)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(
@@ -137,4 +159,16 @@ async fn validate_code(
     let token = produce_session_token(&encoding_key, &payload.username)?;
 
     Ok((StatusCode::CREATED, Json(ValidateCodeResponse { token })))
+}
+
+#[derive(Serialize)]
+struct ApplicationData {
+    message: &'static str,
+}
+
+/// Example endpoint protected by the session middleware.
+async fn application() -> Result<Json<ApplicationData>, AppError> {
+    Ok(Json(ApplicationData {
+        message: "Application data",
+    }))
 }
