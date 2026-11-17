@@ -5,12 +5,16 @@ use axum::{
     extract::{State, rejection::JsonRejection},
     routing::{get, post},
 };
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::{Level, debug, warn};
 
 use crate::{
-    app_error::AppError, repository::Repository, token::produce_vonage_token, user::User,
+    app_error::AppError,
+    repository::Repository,
+    token::{get_encoding_key, produce_session_token, produce_vonage_token},
+    user::User,
     vonage::VonageClient,
 };
 
@@ -29,6 +33,7 @@ pub fn app(repo: Arc<dyn Repository<User>>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/session", post(create_session))
+        .route("/session/verification", post(validate_code))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(
@@ -91,4 +96,38 @@ async fn create_session(
         .start_verification(&vonage_token, &user.phone)
         .await?;
     Ok(Json(SessionResponse { verify_request_id }))
+}
+
+/// `username` should never be accepted from the client. The previous step should store pending challenges with some
+/// expiration deadline.
+#[derive(Deserialize)]
+struct ValidateCodeRequest {
+    username: String, // WARN: This is not a secure implementation!!!
+    request_id: String,
+    code: String,
+}
+
+#[derive(Serialize)]
+struct ValidateCodeResponse {
+    token: String,
+}
+
+/// Complete 2FA for the session.
+async fn validate_code(
+    State(state): State<AppState>,
+    payload: Result<Json<ValidateCodeRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<ValidateCodeResponse>), AppError> {
+    let Json(payload) = payload?;
+
+    let vonage_token = produce_vonage_token()?;
+    state
+        .vonage
+        .validate_verification(&vonage_token, &payload.request_id, &payload.code)
+        .await?;
+
+    debug!(user = %payload.username, "Successful verification");
+    let encoding_key = get_encoding_key()?;
+    let token = produce_session_token(&encoding_key, &payload.username)?;
+
+    Ok((StatusCode::CREATED, Json(ValidateCodeResponse { token })))
 }

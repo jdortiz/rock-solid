@@ -32,6 +32,11 @@ struct VerifyResponse {
     request_id: String,
 }
 
+#[derive(Serialize)]
+struct CheckCodeRequest {
+    code: String,
+}
+
 impl VonageClient {
     /// Create a Vonage client with a bounded request timeout.
     pub fn new() -> Self {
@@ -72,5 +77,31 @@ impl VonageClient {
         let verify_data: VerifyResponse = response.json().await?;
         debug!("REQUEST_ID=\"{}\"", verify_data.request_id);
         Ok(verify_data.request_id)
+    }
+
+    /// Check the verification code that a user has received.
+    pub async fn validate_verification(
+        &self,
+        vonage_token: &str,
+        request_id: &str,
+        code: &str,
+    ) -> Result<(), AppError> {
+        let response = self
+            .http_client
+            .post(format!("{VERIFY_ENDPOINT}/{request_id}"))
+            .bearer_auth(vonage_token)
+            .json(&CheckCodeRequest {
+                code: code.to_owned(),
+            })
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            debug!("Verification provider rejected validation request with response: {response:?}");
+            return Err(AppError::ExternalApiError(
+                "Verification provider rejected the validation".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
