@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::http::HeaderMap;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::app_error::AppError;
 
@@ -60,6 +61,40 @@ pub fn verify_session_token(
     decode::<SessionClaims>(token, decoding_key, &Validation::new(Algorithm::RS256))
         .map(|_| ())
         .map_err(|_| AppError::Unauthorized("Invalid session token".to_string()))
+}
+
+/// JWT claims for interacting with the Vonage APIs.
+#[derive(Serialize)]
+struct VonageClaims {
+    /// Corresponds to the ID of the application with Network Registry capabilities, created in the user's dashboard.
+    application_id: String,
+    /// The time at which the token was issued
+    iat: u64,
+    /// The time at which the token should expire
+    exp: u64,
+    /// A unique identifier for the JWT
+    jti: String,
+}
+
+/// Create a JWT for using the Vonage APIs.
+pub fn produce_vonage_token() -> anyhow::Result<String> {
+    const VONAGE_EXPIRY_SECS: u64 = 600;
+
+    let secret = std::env::var("VONAGE_SECRET_KEY")?;
+    let encoding_key = EncodingKey::from_rsa_pem(secret.as_bytes())?;
+    let app_id = std::env::var("VONAGE_APP_ID")?;
+    let now = get_now_in_secs();
+    let vonage_claims = VonageClaims {
+        iat: now,
+        application_id: app_id,
+        jti: Uuid::new_v4().to_string(),
+        exp: now + VONAGE_EXPIRY_SECS,
+    };
+    Ok(encode(
+        &Header::new(Algorithm::RS256),
+        &vonage_claims,
+        &encoding_key,
+    )?)
 }
 
 fn get_now_in_secs() -> u64 {
