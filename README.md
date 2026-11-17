@@ -72,6 +72,46 @@ curl -i http://127.0.0.1:8080/health
 
 Follow the complete, step-by-step workshop in [INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
+## Workshop checkpoints
+
+The `main` branch is intentionally the starting point. Follow the workshop instructions from there.
+
+Each milestone is also available as a Git tag. To jump to a checkpoint:
+
+```console
+git fetch --tags
+git switch --detach milestone/05-error-handling
+```
+
+Available checkpoints:
+
+| Tag | Topic |
+| --- | --- |
+| `milestone/00-start` | Starting point |
+| `milestone/01-basic-server` | Basic HTTP server |
+| `milestone/02-user-repository` | User repository |
+| `milestone/03-session-jwt` | Session JWT |
+| `milestone/04-tracing` | Logging and tracing |
+| `milestone/05-error-handling` | Unified error handling |
+| `milestone/06-verify-start` | Start Verify authentication |
+| `milestone/07-verify-check` | Verify the OTP |
+| `milestone/08-identity-insights` | Identity Insights risk check |
+| `milestone/09-protected-endpoint` | Protected endpoint |
+| `milestone/10-middleware` | JWT middleware |
+| `milestone/complete` | Complete workshop |
+
+`git switch --detach` lets you inspect or run a checkpoint without changing `main`. Return to the starting point with:
+
+```console
+git switch main
+```
+
+If you want to make changes from a checkpoint, create a branch instead:
+
+```console
+git switch -c my-work milestone/05-error-handling
+```
+
 ## License
 
 This project is licensed under the terms of the [Apache License 2.0](./LICENSE.txt).
