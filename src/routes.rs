@@ -10,14 +10,22 @@ use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, Tr
 use tracing::{Level, debug, warn};
 
 use crate::{
-    app_error::AppError,
-    repository::Repository,
-    token::{get_encoding_key, produce_session_token},
-    user::User,
+    app_error::AppError, repository::Repository, token::produce_vonage_token, user::User,
+    vonage::VonageClient,
 };
+
+#[derive(Clone)]
+struct AppState {
+    repo: Arc<dyn Repository<User>>,
+    vonage: VonageClient,
+}
 
 /// Return an HTTP router with the handlers bound to the endpoints.
 pub fn app(repo: Arc<dyn Repository<User>>) -> Router {
+    let state = AppState {
+        repo,
+        vonage: VonageClient::new(),
+    };
     Router::new()
         .route("/health", get(health))
         .route("/session", post(create_session))
@@ -31,7 +39,7 @@ pub fn app(repo: Arc<dyn Repository<User>>) -> Router {
                 .on_request(DefaultOnRequest::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .with_state(repo)
+        .with_state(state)
 }
 
 #[derive(Serialize)]
@@ -56,17 +64,17 @@ struct SessionRequest {
 
 #[derive(Serialize)]
 struct SessionResponse {
-    /// Session JWT.
-    jwt: String,
+    /// Used to provide 2FA code.
+    verify_request_id: String,
 }
 
 /// HTTP handler to create a session for a correspondent in the application.
 async fn create_session(
-    State(repo): State<Arc<dyn Repository<User>>>,
+    State(state): State<AppState>,
     payload: Result<Json<SessionRequest>, JsonRejection>,
 ) -> Result<Json<SessionResponse>, AppError> {
     let Json(payload) = payload?;
-    let Some(user) = repo.find_by_id(&payload.username) else {
+    let Some(user) = state.repo.find_by_id(&payload.username) else {
         warn!(username = payload.username, "User not found");
         return Err(AppError::Unauthorized("Invalid credentials".to_string()));
     };
@@ -77,8 +85,10 @@ async fn create_session(
         return Err(AppError::Unauthorized("Invalid credentials".to_string()));
     }
 
-    let encoding_key = get_encoding_key()?;
-    let token = produce_session_token(&encoding_key, &payload.username)?;
-
-    Ok(Json(SessionResponse { jwt: token }))
+    let vonage_token = produce_vonage_token()?;
+    let verify_request_id = state
+        .vonage
+        .start_verification(&vonage_token, &user.phone)
+        .await?;
+    Ok(Json(SessionResponse { verify_request_id }))
 }

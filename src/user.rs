@@ -5,14 +5,16 @@ use crate::repository::Identifiable;
 pub struct User {
     pub username: String,
     hashed_password: String,
+    pub phone: String,
 }
 
 impl User {
     /// Create a new user.
-    pub fn new(username: impl Into<String>, password: &str) -> Self {
+    pub fn new(username: impl Into<String>, password: &str, phone: impl Into<String>) -> Self {
         Self {
             username: username.into(),
             hashed_password: bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap(),
+            phone: phone.into(),
         }
     }
 

@@ -15,6 +15,7 @@ mod repository;
 mod routes;
 mod token;
 mod user;
+mod vonage;
 
 #[tokio::main]
 async fn main() {
@@ -36,9 +37,14 @@ async fn main() {
 }
 
 /// Create a user repository for demo purposes.
+
 fn seed_users() -> InMemoryRepository<User> {
     let mut users = InMemoryRepository::new();
-    users.add(User::new("alice", "secret123"));
+    users.add(User::new(
+        "alice",
+        "secret123",
+        std::env::var("VERIFY_PHONE").unwrap_or("34600123456".to_string()),
+    ));
 
     users
 }

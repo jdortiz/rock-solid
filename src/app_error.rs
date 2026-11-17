@@ -61,3 +61,10 @@ impl From<JsonRejection> for AppError {
         Self::BadRequest("Invalid JSON request body".to_string())
     }
 }
+
+impl From<reqwest::Error> for AppError {
+    fn from(error: reqwest::Error) -> Self {
+        error!("External verification API error: {error}");
+        Self::ExternalApiError("API request failed".to_string())
+    }
+}
