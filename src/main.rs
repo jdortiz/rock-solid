@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 use crate::{
     repository::{InMemoryRepository, Repository},
@@ -17,10 +19,15 @@ mod user;
 async fn main() {
     const SERVER_ADDR: &str = "127.0.0.1:8080";
     dotenvy::dotenv().expect("Unable to load configuration from .env");
+    tracing_subscriber::fmt()
+        // .json()
+        // .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     let repo: Arc<dyn Repository<User>> = Arc::new(seed_users());
 
-    println!("Launching server: http://{SERVER_ADDR}/");
+    info!(addr = SERVER_ADDR, "Launching server");
     let listener = TcpListener::bind(SERVER_ADDR)
         .await
         .expect("Unable to create listener");
