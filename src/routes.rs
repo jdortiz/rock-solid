@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{State, rejection::JsonRejection},
+    http::HeaderMap,
     routing::{get, post},
 };
 use reqwest::StatusCode;
@@ -13,7 +14,10 @@ use tracing::{Level, debug, warn};
 use crate::{
     app_error::AppError,
     repository::Repository,
-    token::{get_encoding_key, produce_session_token, produce_vonage_token},
+    token::{
+        get_decoding_key, get_encoding_key, produce_session_token, produce_vonage_token,
+        verify_session_token,
+    },
     user::User,
     vonage::VonageClient,
 };
@@ -34,6 +38,7 @@ pub fn app(repo: Arc<dyn Repository<User>>) -> Router {
         .route("/health", get(health))
         .route("/session", post(create_session))
         .route("/session/verification", post(validate_code))
+        .route("/application", get(application))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(
@@ -137,4 +142,18 @@ async fn validate_code(
     let token = produce_session_token(&encoding_key, &payload.username)?;
 
     Ok((StatusCode::CREATED, Json(ValidateCodeResponse { token })))
+}
+
+#[derive(Serialize)]
+struct ApplicationData {
+    message: &'static str,
+}
+
+/// Example endpoint protected by the session middleware.
+async fn application(headers: HeaderMap) -> Result<Json<ApplicationData>, AppError> {
+    let decoding_key = get_decoding_key()?;
+    verify_session_token(&decoding_key, &headers)?;
+    Ok(Json(ApplicationData {
+        message: "Application data",
+    }))
 }
