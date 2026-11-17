@@ -10,6 +10,7 @@ use crate::{
     user::User,
 };
 
+mod app_error;
 mod repository;
 mod routes;
 mod token;

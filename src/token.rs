@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
+
+use crate::app_error::AppError;
 
 /// Auxiliary function to obtain the encoding key from the environment.
 pub fn get_encoding_key() -> anyhow::Result<EncodingKey> {
@@ -46,16 +48,18 @@ pub fn produce_session_token(encoding_key: &EncodingKey, username: &str) -> anyh
 pub fn verify_session_token(
     decoding_key: &DecodingKey,
     headers: &HeaderMap,
-) -> Result<(), StatusCode> {
+) -> Result<(), AppError> {
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .ok_or_else(|| {
+            AppError::Unauthorized("Missing or invalid authorization header".to_string())
+        })?;
 
-    decode::<SessionClaims>(token, &decoding_key, &Validation::new(Algorithm::RS256))
+    decode::<SessionClaims>(token, decoding_key, &Validation::new(Algorithm::RS256))
         .map(|_| ())
-        .map_err(|_| StatusCode::UNAUTHORIZED)
+        .map_err(|_| AppError::Unauthorized("Invalid session token".to_string()))
 }
 
 fn get_now_in_secs() -> u64 {

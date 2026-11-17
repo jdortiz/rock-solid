@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{State, rejection::JsonRejection},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
-use tracing::{Level, debug, error, warn};
+use tracing::{Level, debug, warn};
 
 use crate::{
+    app_error::AppError,
     repository::Repository,
     token::{get_encoding_key, produce_session_token},
     user::User,
@@ -40,8 +40,7 @@ struct HealthData {
     ready: bool,
 }
 
-#[tracing::instrument]
-async fn health() -> Result<Json<HealthData>, StatusCode> {
+async fn health() -> Result<Json<HealthData>, AppError> {
     debug!("Health requested");
     Ok(Json(HealthData {
         live: true,
@@ -64,25 +63,22 @@ struct SessionResponse {
 /// HTTP handler to create a session for a correspondent in the application.
 async fn create_session(
     State(repo): State<Arc<dyn Repository<User>>>,
-    Json(payload): Json<SessionRequest>,
-) -> Result<Json<SessionResponse>, StatusCode> {
+    payload: Result<Json<SessionRequest>, JsonRejection>,
+) -> Result<Json<SessionResponse>, AppError> {
+    let Json(payload) = payload?;
     let Some(user) = repo.find_by_id(&payload.username) else {
         warn!(username = payload.username, "User not found");
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(AppError::Unauthorized("Invalid credentials".to_string()));
     };
     debug!(username = payload.username, "Authenticating user");
 
     if !user.verify_password(&payload.password) {
         warn!(username = payload.username, "Wrong password for user");
-        return Err(StatusCode::UNAUTHORIZED);
+        return Err(AppError::Unauthorized("Invalid credentials".to_string()));
     }
 
-    let encoding_key = get_encoding_key().map_err(|err| {
-        error!("Encoding key not found: {err}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let token = produce_session_token(&encoding_key, &payload.username)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let encoding_key = get_encoding_key()?;
+    let token = produce_session_token(&encoding_key, &payload.username)?;
 
     Ok(Json(SessionResponse { jwt: token }))
 }
