@@ -10,11 +10,13 @@ use crate::{
 
 mod repository;
 mod routes;
+mod token;
 mod user;
 
 #[tokio::main]
 async fn main() {
     const SERVER_ADDR: &str = "127.0.0.1:8080";
+    dotenvy::dotenv().expect("Unable to load configuration from .env");
 
     let repo: Arc<dyn Repository<User>> = Arc::new(seed_users());
 
